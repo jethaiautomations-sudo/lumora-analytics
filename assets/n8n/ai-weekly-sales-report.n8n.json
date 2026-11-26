@@ -1,0 +1,348 @@
+{
+  "name": "AI Weekly Sales Report (Dashboard & Reporting Automation)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "1a1c8a43-152f-4117-b7a8-41aff535e248",
+      "name": "Every Monday 7 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lumora-weekly-report",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "db62ecfe-3e44-4399-91bd-aa212e7d6af2",
+      "name": "Run from dashboard",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        480
+      ],
+      "webhookId": "c49517e1-f9de-44e8-aa6a-5d57c02d318c"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "daily_sales",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "3b0fab19-4780-40a3-b874-37697ca04fc3",
+      "name": "Read daily sales",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        220,
+        300
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: \"Calculate KPIs\" (Run once for all items)\n// Input: one item per row of the daily sales sheet\n// (date, channel, sessions, orders, revenue_usd, ad_spend_usd, returns, new_customers)\nconst rows = $input.all().map(i => ({\n  date: String(i.json.date).slice(0, 10),\n  channel: i.json.channel,\n  sessions: +i.json.sessions || 0,\n  orders: +i.json.orders || 0,\n  revenue: +i.json.revenue_usd || 0,\n  ad_spend: +i.json.ad_spend_usd || 0,\n  returns: +i.json.returns || 0,\n}));\nif (!rows.length) throw new Error('No sales rows found in the sheet');\n\nconst DAY = 864e5;\nconst iso = t => new Date(t).toISOString().slice(0, 10);\nconst end = rows.map(r => r.date).sort().at(-1);\nconst e = Date.parse(end + 'T00:00:00Z');\nconst win = { curStart: iso(e - 6 * DAY), curEnd: end, prevStart: iso(e - 13 * DAY), prevEnd: iso(e - 7 * DAY) };\n\nconst totals = list => {\n  const t = { sessions: 0, orders: 0, revenue: 0, ad_spend: 0, returns: 0, paid_revenue: 0 };\n  for (const r of list) {\n    t.sessions += r.sessions; t.orders += r.orders; t.revenue += r.revenue;\n    t.ad_spend += r.ad_spend; t.returns += r.returns;\n    if (r.ad_spend > 0) t.paid_revenue += r.revenue;\n  }\n  return t;\n};\nconst inRange = (r, a, b) => r.date >= a && r.date <= b;\nconst round = (v, n) => Math.round(v * 10 ** n) / 10 ** n;\nconst pctChange = (a, b) => (b ? round((a / b - 1) * 100, 1) : null);\n\nconst cur = totals(rows.filter(r => inRange(r, win.curStart, win.curEnd)));\nconst prev = totals(rows.filter(r => inRange(r, win.prevStart, win.prevEnd)));\n\nconst kpi = (c, p, dec, mode) => ({\n  current: round(c, dec), previous: round(p, dec),\n  change: mode === 'pct' ? pctChange(c, p) : round(c - p, dec),\n  change_unit: mode === 'pct' ? '%' : mode,\n});\nconst kpis = {\n  revenue_usd: kpi(cur.revenue, prev.revenue, 0, 'pct'),\n  orders: kpi(cur.orders, prev.orders, 0, 'pct'),\n  aov_usd: kpi(cur.revenue / cur.orders, prev.revenue / prev.orders, 2, 'pct'),\n  conversion_rate_pct: kpi(cur.orders / cur.sessions * 100, prev.orders / prev.sessions * 100, 2, 'pts'),\n  paid_roas: kpi(cur.paid_revenue / cur.ad_spend, prev.paid_revenue / prev.ad_spend, 2, 'x'),\n  return_rate_pct: kpi(cur.returns / cur.orders * 100, prev.returns / prev.orders * 100, 1, 'pts'),\n  ad_spend_usd: kpi(cur.ad_spend, prev.ad_spend, 0, 'pct'),\n};\n\nconst channels = [...new Set(rows.map(r => r.channel))].map(channel => {\n  const c = totals(rows.filter(r => r.channel === channel && inRange(r, win.curStart, win.curEnd)));\n  const p = totals(rows.filter(r => r.channel === channel && inRange(r, win.prevStart, win.prevEnd)));\n  return {\n    channel,\n    revenue_usd: round(c.revenue, 0), revenue_prev_usd: round(p.revenue, 0), revenue_change_pct: pctChange(c.revenue, p.revenue),\n    orders: c.orders, orders_prev: p.orders,\n    conversion_rate_pct: round(c.orders / c.sessions * 100, 2),\n    aov_usd: round(c.revenue / c.orders, 2),\n    ad_spend_usd: round(c.ad_spend, 0), ad_spend_prev_usd: round(p.ad_spend, 0),\n    roas: c.ad_spend > 0 ? round(c.revenue / c.ad_spend, 2) : null,\n    roas_prev: p.ad_spend > 0 ? round(p.revenue / p.ad_spend, 2) : null,\n    returns: c.returns, returns_prev: p.returns,\n    return_rate_pct: round(c.returns / c.orders * 100, 1),\n    return_rate_prev_pct: round(p.returns / p.orders * 100, 1),\n  };\n}).sort((a, b) => b.revenue_usd - a.revenue_usd);\n\n// Rule-based alerts: same rules and wording as core/metrics.py -> alerts().\n// Uses unrounded totals and ROAS = paid revenue / ad spend, like the dashboard.\nconst RULES = { roas_drop_pct: 25, return_rate_max: 15, revenue_drop_pct: 10, revenue_jump_pct: 30 };\nconst rawPct = (a, b) => (a == null || !b ? null : (a / b - 1) * 100);\nconst alerts = [];\nfor (const { channel } of channels) {\n  const c = totals(rows.filter(r => r.channel === channel && inRange(r, win.curStart, win.curEnd)));\n  const p = totals(rows.filter(r => r.channel === channel && inRange(r, win.prevStart, win.prevEnd)));\n  const roas = c.ad_spend ? c.paid_revenue / c.ad_spend : null;\n  const roasPrev = p.ad_spend ? p.paid_revenue / p.ad_spend : null;\n  const roasChg = rawPct(roas, roasPrev);\n  const spendChg = rawPct(c.ad_spend, p.ad_spend);\n  if (roasChg !== null && roasChg <= -RULES.roas_drop_pct) {\n    let detail = `ROAS fell from ${roasPrev.toFixed(2)}× to ${roas.toFixed(2)}×`;\n    if (spendChg !== null && spendChg > 0) detail += ` while ad spend rose ${spendChg.toFixed(0)}%`;\n    alerts.push({ level: 'critical', channel, title: 'Paid efficiency dropping', detail: detail + '.' });\n  }\n  const rr = c.orders ? c.returns / c.orders * 100 : null;\n  const rrPrev = p.orders ? p.returns / p.orders * 100 : null;\n  if (rr !== null && rr >= RULES.return_rate_max) {\n    const prevTxt = rrPrev !== null ? ` (was ${rrPrev.toFixed(1)}%)` : '';\n    alerts.push({ level: 'warning', channel, title: 'High return rate', detail: `${rr.toFixed(1)}% of orders were returned${prevTxt}.` });\n  }\n  const chg = rawPct(c.revenue, p.revenue);\n  if (chg !== null) {\n    if (chg <= -RULES.revenue_drop_pct) {\n      alerts.push({ level: 'warning', channel, title: 'Revenue down', detail: `Revenue fell ${Math.abs(chg).toFixed(1)}% vs the previous period.` });\n    } else if (chg >= RULES.revenue_jump_pct) {\n      alerts.push({ level: 'positive', channel, title: 'Revenue surge', detail: `Revenue grew ${chg.toFixed(1)}% vs the previous period.` });\n    }\n  }\n}\nconst LEVEL_ORDER = { critical: 0, warning: 1, positive: 2 };\nalerts.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);\n\nreturn [{ json: { period: win, kpis, channels, alerts } }];\n"
+      },
+      "id": "720da162-03dc-48d0-9d47-17d9afc575bf",
+      "name": "Calculate KPIs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', response_format: { type: 'json_object' }, temperature: 0.3, messages: [{ role: 'system', content: \"You are a senior e-commerce analyst at an online home-goods store, writing the performance report for busy executives. They read it in under a minute and act on it.\\n\\nDATA RULES\\n- The KPI JSON compares the current period with the previous period of the same length: overall KPIs, then one entry per channel with current and previous revenue, ad spend, ROAS and return rate.\\n- Use ONLY numbers that appear in the JSON. Never invent, estimate or recalculate a figure (no new totals, differences or percentages). If a change you want to mention is not given, quote the two values instead (\\\"from $7.5K to $13.0K\\\").\\n- Do not invent causes the data does not show.\\n\\nWHAT TO REPORT\\n- The JSON includes an \\\"alerts\\\" list: rule-based checks computed by code, already ordered most severe first (critical, then warning, then positive). Treat it as the source of truth for what is a risk.\\n- risks: take them from the \\\"critical\\\" and \\\"warning\\\" alerts, in the order given (most severe first). Use each alert's channel and figures; you may add the matching numbers from that channel's data (e.g. ad spend or revenue) and why it matters. If there are fewer than two critical/warning alerts, fill the remaining slot with the largest revenue decline in the channel data, described with its values only.\\n- Never decide on your own whether a value is above or below a threshold, and never mention a threshold or limit that is not stated in the alerts.\\n- highlights: take them from the \\\"positive\\\" alerts first, then from the channels with the largest revenue gains.\\n- Rank by business impact (money at stake), not by the size of a % change. Ignore small moves under about 5% unless the money involved is large.\\n\\nSTYLE\\n- Round for readability: money as $176.9K or $13.0K ($1.2M for millions); percentages as whole numbers (69%), or one decimal under 10% (6.4%); ROAS to one decimal with × (1.3×); return rates to whole numbers or one decimal under 10%.\\n- Plain, direct English. No filler, no hedging, no jargon beyond ROAS.\\n\\nOUTPUT\\n- summary: 2-3 sentences: the headline result (revenue and its change), the main driver (which channel), and the biggest risk.\\n- highlights (2): each names the channel, the number, and why it matters.\\n- risks (2): the two most severe critical/warning alerts; each names the channel, the number, and why it matters.\\n- actions (3): each must address one of the risks or highlights you wrote (name the same channel), and be specific and practical: what to change, where, and by when. No generic advice such as \\\"enhance the strategy\\\", \\\"optimise campaigns\\\", \\\"monitor closely\\\" or \\\"improve targeting\\\".\\n\\nACTION RULES\\n- Every number in an action must appear in the KPI JSON. Never invent targets, thresholds or goals (no \\\"aim for $11.3K\\\", \\\"get returns below 17%\\\", \\\"raise ROAS to 3×\\\").\\n- Check the direction before recommending a change. Only say \\\"cut spend back to last period's level\\\" if that channel's ad spend went UP; if it went down or stayed flat, do not recommend returning to the previous value. The same applies to revenue, ROAS and return rate: the action must move the metric in the direction the data says is needed.\\n- Prefer actions the data clearly supports, such as \\\"investigate why ... \\\", \\\"shift budget from X to Y\\\" (X weaker, Y stronger in the data), \\\"pause the worst-performing ads / listing\\\", \\\"audit the most-returned products\\\".\\n- If the data does not support a specific number, give the action without a number.\\n\\nEXAMPLES (style only: a different business with made-up channels and figures; never reuse these names or numbers)\\n- Highlight: \\\"Affiliates revenue rose 42% to $48.2K with no ad spend, making it the cheapest source of growth this period.\\\"\\n- Risk: \\\"TikTok Ads spend rose 58% to $21.4K while ROAS fell from 3.1× to 1.6×, so the extra budget is buying far less revenue; it is now the least efficient paid channel.\\\"\\n- Action: \\\"Cut TikTok Ads spend back to last period's ~$13.5K this week, pause the weakest ad sets, and raise it again only once ROAS recovers.\\\"\\n\\nReturn ONLY valid JSON, with no markdown and no other text, with EXACTLY 2 highlights, 2 risks and 3 actions, in this shape:\\n{\\\"summary\\\": \\\"string\\\", \\\"highlights\\\": [\\\"string\\\", \\\"string\\\"], \\\"risks\\\": [\\\"string\\\", \\\"string\\\"], \\\"actions\\\": [\\\"string\\\", \\\"string\\\", \\\"string\\\"]}\" }, { role: 'user', content: 'KPIs (selected period vs previous period):\\n' + JSON.stringify($json, null, 2) }] }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "e9b6d251-7c61-4edd-b16c-a5816af802d6",
+      "name": "AI: write weekly report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "",
+          "name": "OpenAI API key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// n8n Code node: \"Parse AI report + build email\"\n// Reads the LLM answer, checks it is valid JSON with exactly 2 highlights, 2 risks and 3 actions,\n// then builds the HTML email, the Slack text and the rows saved for the dashboard.\nconst DASHBOARD_URL = 'http://localhost:8501';   // change to your deployed dashboard link\n// Public link to assets/logo.png (e.g. the GitHub \"raw\" link once the repo is public).\n// Gmail blocks embedded images, so the logo must be hosted online. Leave empty to show the \"L\" badge instead.\nconst LOGO_URL = 'https://raw.githubusercontent.com/jethaiautomations-sudo/lumora-analytics/main/assets/logo.png';\n\nconst ai = $input.first().json;\nconst k = $('Calculate KPIs').first().json;\n\nconst raw = String(ai.choices?.[0]?.message?.content ?? '').trim();\nif (!raw) throw new Error('OpenAI returned no message content: ' + JSON.stringify(ai).slice(0, 300));\nlet report;\ntry {\n  report = JSON.parse(raw.replace(/^```(json)?/i, '').replace(/```$/, '').trim());\n} catch (err) {\n  throw new Error('LLM did not return valid JSON: ' + raw.slice(0, 300));\n}\nif (typeof report.summary !== 'string' || !report.summary.trim()) {\n  throw new Error('LLM report: \"summary\" must be a non-empty string');\n}\nconst expected = { highlights: 2, risks: 2, actions: 3 };\nfor (const [key, n] of Object.entries(expected)) {\n  const items = report[key];\n  if (!Array.isArray(items)) throw new Error('LLM report: \"' + key + '\" must be a list of ' + n + ' strings');\n  if (items.length !== n) throw new Error('LLM report: \"' + key + '\" must have exactly ' + n + ' items (got ' + items.length + ')');\n  if (!items.every(i => typeof i === 'string' && i.trim())) throw new Error('LLM report: every item in \"' + key + '\" must be a non-empty string');\n}\n\n// ---------- formatting ----------\nconst esc = s => String(s).replace(/[&<>\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;' }[c]));\nconst money = n => '$' + Math.round(n).toLocaleString('en-US');\nconst fmtDate = iso => new Date(iso + 'T00:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });\nconst period = `${fmtDate(k.period.curStart)} – ${fmtDate(k.period.curEnd)} ${k.period.curEnd.slice(0, 4)}`;\nconst arrow = c => (c > 0 ? '↑' : c < 0 ? '↓' : '–');\nconst delta = (c, unit) => {\n  if (c === null || c === undefined) return '–';\n  const a = Math.abs(c);\n  const num = unit === '%' ? a.toFixed(1) + '%' : unit === 'pts' ? a.toFixed(a < 1 ? 2 : 1) + ' pts' : a.toFixed(2) + '×';\n  return `${arrow(c)} ${num}`;\n};\n\nconst C = { ink: '#0F172A', body: '#334155', muted: '#64748B', faint: '#94A3B8', line: '#E2E8F0', bg: '#F1F5F9',\n            teal: '#0D9488', tealSoft: '#CCFBF1', good: '#047857', goodBg: '#D1FAE5', bad: '#B91C1C', badBg: '#FEE2E2',\n            flatBg: '#F1F5F9', dark: '#0B0F14' };\n\nconst K = k.kpis;\nconst kpis = [\n  { label: 'Revenue',     value: money(K.revenue_usd.current),               k: K.revenue_usd,         goodUp: true },\n  { label: 'Orders',      value: K.orders.current.toLocaleString('en-US'),   k: K.orders,              goodUp: true },\n  { label: 'Avg. order',  value: '$' + K.aov_usd.current.toFixed(2),         k: K.aov_usd,             goodUp: true },\n  { label: 'Conversion',  value: K.conversion_rate_pct.current.toFixed(2) + '%', k: K.conversion_rate_pct, goodUp: true },\n  { label: 'Paid ROAS',   value: K.paid_roas.current.toFixed(2) + '×',       k: K.paid_roas,           goodUp: true },\n  { label: 'Return rate', value: K.return_rate_pct.current.toFixed(1) + '%', k: K.return_rate_pct,     goodUp: false },\n];\n\nconst pill = (c, unit, goodUp) => {\n  const good = c === 0 || c === null ? null : (c > 0) === goodUp;\n  const [fg, bg] = good === null ? [C.muted, C.flatBg] : good ? [C.good, C.goodBg] : [C.bad, C.badBg];\n  return `<span style=\"display:inline-block;padding:2px 8px;border-radius:999px;background:${bg};color:${fg};font-size:12px;font-weight:600;white-space:nowrap\">${delta(c, unit)}</span>`;\n};\n\nconst tile = t => `\n  <td width=\"33.33%\" valign=\"top\" style=\"padding:6px\">\n    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"border:1px solid ${C.line};border-radius:10px;background:#FFFFFF\">\n      <tr><td style=\"padding:14px 14px 12px\">\n        <div style=\"font-size:12px;color:${C.muted};letter-spacing:.02em\">${t.label}</div>\n        <div style=\"font-size:22px;line-height:28px;font-weight:700;color:${C.ink};margin:4px 0 8px\">${t.value}</div>\n        ${pill(t.k.change, t.k.change_unit, t.goodUp)}\n      </td></tr>\n    </table>\n  </td>`;\nconst kpiRows = [kpis.slice(0, 3), kpis.slice(3)].map(r => `<tr>${r.map(tile).join('')}</tr>`).join('');\n\nconst section = (title, color, bg, items, numbered) => `\n  <tr><td style=\"padding:22px 32px 0\">\n    <div style=\"font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${color};margin:0 0 10px\">${title}</div>\n    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">\n      ${items.map((text, i) => `\n      <tr><td style=\"padding:0 0 8px\">\n        <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:${bg};border-radius:8px\">\n          <tr>\n            <td width=\"4\" style=\"background:${color};border-radius:8px 0 0 8px\"></td>\n            <td width=\"30\" valign=\"top\" style=\"padding:12px 0 12px 12px;font-size:13px;font-weight:700;color:${color}\">${numbered ? (i + 1) + '.' : '●'}</td>\n            <td style=\"padding:12px 14px 12px 4px;font-size:14px;line-height:21px;color:${C.body}\">${esc(text)}</td>\n          </tr>\n        </table>\n      </td></tr>`).join('')}\n    </table>\n  </td></tr>`;\n\nconst revUp = K.revenue_usd.change >= 0;\nconst headline = `Revenue ${revUp ? 'up' : 'down'} ${Math.abs(K.revenue_usd.change).toFixed(1)}% to ${money(K.revenue_usd.current)}`;\n\nconst html = `<!doctype html>\n<html><body style=\"margin:0;padding:0;background:${C.bg}\">\n<div style=\"display:none;max-height:0;overflow:hidden\">${esc(headline)}. ${esc(report.summary)}</div>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background:${C.bg};font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif\">\n<tr><td align=\"center\" style=\"padding:28px 12px\">\n  <table role=\"presentation\" width=\"640\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:640px;width:100%;background:#FFFFFF;border-radius:14px;overflow:hidden;border:1px solid ${C.line}\">\n\n    <!-- header -->\n    <tr><td style=\"background:${C.dark};padding:20px 32px\">\n      <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\"><tr>\n        <td valign=\"middle\">\n          <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"><tr>\n            ${LOGO_URL\n              ? `<td width=\"40\" valign=\"middle\"><img src=\"${LOGO_URL}\" width=\"40\" height=\"40\" alt=\"Lumora\" style=\"display:block;width:40px;height:40px;border-radius:50%;border:0\"></td>`\n              : `<td width=\"30\" height=\"30\" align=\"center\" valign=\"middle\" style=\"background:#2DD4BF;background-image:linear-gradient(135deg,#2DD4BF,#3B82F6);border-radius:8px;color:#04110E;font-weight:800;font-size:15px\">L</td>`}\n            <td style=\"padding-left:12px\">\n              <div style=\"color:#F8FAFC;font-size:15px;font-weight:700;line-height:18px\">Lumora Analytics</div>\n              <div style=\"color:#94A3B8;font-size:12px;line-height:16px\">Weekly sales report</div>\n            </td>\n          </tr></table>\n        </td>\n        <td align=\"right\" valign=\"middle\">\n          <span style=\"display:inline-block;padding:5px 12px;border:1px solid #334155;border-radius:999px;color:#CBD5E1;font-size:12px;white-space:nowrap\">${period}</span>\n        </td>\n      </tr></table>\n    </td></tr>\n\n    <!-- headline -->\n    <tr><td style=\"padding:28px 32px 6px\">\n      <div style=\"font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:${C.teal}\">This week at a glance</div>\n      <div style=\"font-size:24px;line-height:31px;font-weight:700;color:${C.ink};margin:6px 0 10px\">${esc(headline)}</div>\n      <div style=\"font-size:15px;line-height:23px;color:${C.body}\">${esc(report.summary)}</div>\n    </td></tr>\n\n    <!-- KPI tiles -->\n    <tr><td style=\"padding:16px 26px 0\">\n      <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\">${kpiRows}</table>\n      <div style=\"font-size:11px;color:${C.faint};padding:6px 6px 0\">Compared with the previous 7 days (${fmtDate(k.period.prevStart)} – ${fmtDate(k.period.prevEnd)}). Green = good, red = needs attention.</div>\n    </td></tr>\n\n    ${section('Risks to watch', C.bad, '#FEF2F2', report.risks, false)}\n    ${section('Highlights', C.good, '#ECFDF5', report.highlights, false)}\n    ${section('Recommended actions', C.teal, '#F0FDFA', report.actions, true)}\n\n    <!-- CTA -->\n    <tr><td align=\"center\" style=\"padding:26px 32px 30px\">\n      <a href=\"${DASHBOARD_URL}\" style=\"display:inline-block;background:${C.dark};color:#FFFFFF;text-decoration:none;font-size:14px;font-weight:600;padding:12px 22px;border-radius:8px\">Open the dashboard →</a>\n    </td></tr>\n\n    <!-- footer -->\n    <tr><td style=\"border-top:1px solid ${C.line};padding:16px 32px;background:#F8FAFC\">\n      <div style=\"font-size:11px;line-height:17px;color:${C.faint}\">\n        Generated automatically by n8n + AI. Figures are calculated from the daily sales sheet; the AI only explains them.<br>\n        Lumora Home is a fictional company — sample data for a portfolio demo.\n      </div>\n    </td></tr>\n\n  </table>\n</td></tr></table>\n</body></html>`;\n\n// ---------- Slack (mrkdwn) ----------\nconst slack = [\n  `*📊 Weekly sales report · ${period}*`,\n  `*${headline}* · Orders ${K.orders.current.toLocaleString('en-US')} (${delta(K.orders.change, '%')}) · Paid ROAS ${K.paid_roas.current.toFixed(2)}× (${delta(K.paid_roas.change, 'x')})`,\n  '',\n  report.summary,\n  '',\n  '*⚠️ Risks*', ...report.risks.map(r => '• ' + r),\n  '',\n  '*✅ Highlights*', ...report.highlights.map(h => '• ' + h),\n  '',\n  '*🎯 Actions*', ...report.actions.map((a, i) => `${i + 1}. ${a}`),\n  '',\n  `<${DASHBOARD_URL}|Open the dashboard>`,\n].join('\\n');\n\n// Rows in the same shape the dashboard reads (section, text)\nconst dashboardRows = [\n  { section: 'summary', text: report.summary },\n  ...report.highlights.map(text => ({ section: 'highlight', text })),\n  ...report.risks.map(text => ({ section: 'risk', text })),\n  ...report.actions.map(text => ({ section: 'action', text })),\n].map(r => ({ week_start: k.period.curStart, week_end: k.period.curEnd, generated_at: new Date().toISOString(), ...r }));\n\nreturn [{ json: {\n  subject: `📊 ${headline} · Weekly sales report (${period})`,\n  html, slack, dashboardRows, report,\n} }];\n"
+      },
+      "id": "cc7552ee-25f8-4c62-848e-f91ae16caef3",
+      "name": "Parse AI report + build email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_WITH_TEAM_EMAIL",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b10c4452-9247-404b-a6bd-18a5e9e4969c",
+      "name": "Email report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        120
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "#weekly-reports",
+          "mode": "name"
+        },
+        "text": "={{ $json.slack }}",
+        "otherOptions": {}
+      },
+      "id": "c60659e1-2254-4f74-bace-46175c4d6cc3",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        300
+      ],
+      "credentials": {
+        "slackApi": {
+          "id": "",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "dashboardRows",
+        "options": {}
+      },
+      "id": "ac1ca828-b231-4bdb-b096-b93781276475",
+      "name": "Split report rows",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "ai_reports",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": []
+        },
+        "options": {}
+      },
+      "id": "b28856d3-496b-4bd2-a2bf-33d996d19f63",
+      "name": "Save report for dashboard",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1340,
+        480
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## AI Weekly Sales Report\nStarts every Monday 7 AM, or when the Streamlit dashboard calls the 'Run from dashboard' webhook.\n\n1. Reads daily sales from Google Sheets\n2. Code node calculates KPIs (this week vs last week, by channel)\n3. Code node adds rule-based alerts; OpenAI (gpt-4o-mini) writes the summary, highlights, risks and actions as JSON\n4. Output is validated, then emailed, posted to Slack and saved for the dashboard\n\nSet up: add credentials (incl. Header Auth 'OpenAI API key': Authorization = Bearer <key>), replace REPLACE_WITH_YOUR_SHEET_ID and REPLACE_WITH_TEAM_EMAIL.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "4196e564-df57-4f3a-9fa1-de684aa99a7a",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -40
+      ]
+    }
+  ],
+  "connections": {
+    "Every Monday 7 AM": {
+      "main": [
+        [
+          {
+            "node": "Read daily sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read daily sales": {
+      "main": [
+        [
+          {
+            "node": "Calculate KPIs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate KPIs": {
+      "main": [
+        [
+          {
+            "node": "AI: write weekly report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: write weekly report": {
+      "main": [
+        [
+          {
+            "node": "Parse AI report + build email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI report + build email": {
+      "main": [
+        [
+          {
+            "node": "Email report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Split report rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split report rows": {
+      "main": [
+        [
+          {
+            "node": "Save report for dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run from dashboard": {
+      "main": [
+        [
+          {
+            "node": "Read daily sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
