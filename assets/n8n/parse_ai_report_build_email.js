@@ -1,7 +1,7 @@
 // n8n Code node: "Parse AI report + build email"
 // Reads the LLM answer, checks it is valid JSON with exactly 2 highlights, 2 risks and 3 actions,
 // then builds the HTML email, the Slack text and the rows saved for the dashboard.
-const DASHBOARD_URL = 'http://localhost:8501';   // change to your deployed dashboard link
+const DASHBOARD_URL = 'https://lumora-analytics.streamlit.app';   // change if you deploy your own copy
 // Public link to assets/logo.png (e.g. the GitHub "raw" link once the repo is public).
 // Gmail blocks embedded images, so the logo must be hosted online. Leave empty to show the "L" badge instead.
 const LOGO_URL = 'https://raw.githubusercontent.com/jethaiautomations-sudo/lumora-analytics/main/assets/logo.png';
