@@ -64,6 +64,16 @@ def load_orders(path: Path = ORDERS_FILE) -> pd.DataFrame:
     return prepare_orders(pd.read_csv(path))
 
 
+# Column names shown to people in downloaded CSVs. Internal names stay as they are.
+EXPORT_RENAMES = {"net_profit": "profit_after_shipping", "net_margin": "margin_after_shipping",
+                  "net_margin_pct": "margin_after_shipping_pct"}
+
+
+def to_export_csv(df: pd.DataFrame) -> bytes:
+    """CSV bytes for a download, with user-facing column names."""
+    return df.rename(columns=EXPORT_RENAMES).to_csv(index=False).encode()
+
+
 def load_targets(path: Path = TARGETS_FILE) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame(columns=["month", "salesperson", "target_usd"])

@@ -162,7 +162,7 @@ def filter_bar(orders: pd.DataFrame, marketing: pd.DataFrame, page_key: str) -> 
         export = bi.in_period(bi.apply_filters(orders, f), start, end).drop(columns=["customer_first_order"]).copy()
         export["order_date"] = export["order_date"].dt.strftime("%Y-%m-%d")
         what = "order lines"
-    c4.download_button("Export", export.to_csv(index=False).encode(), file_name=f"lumora_{page_key}_{start}_{end}.csv",
+    c4.download_button("Export", bi.to_export_csv(export), file_name=f"lumora_{page_key}_{start}_{end}.csv",
                        mime="text/csv", icon=":material/download:", use_container_width=True,
                        key=f"export_{page_key}", disabled=export.empty,
                        help=f"Download the {what} for {fmt_range(start, end)} with your current filters, as CSV.")

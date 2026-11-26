@@ -4,6 +4,7 @@ import math
 
 import streamlit as st
 
+from core import bi
 from ui import components as ui
 
 SECTION = "Data explorer"
@@ -69,5 +70,5 @@ def _explorer(ctx) -> None:
     p2.number_input("Page", min_value=1, max_value=pages, step=1, key="ex_page", label_visibility="collapsed")
     out = df.drop(columns=["customer_first_order"]).copy()
     out["order_date"] = out["order_date"].dt.strftime("%Y-%m-%d")
-    p3.download_button("Download results", out.to_csv(index=False).encode(), file_name="lumora_order_lines.csv",
+    p3.download_button("Download results", bi.to_export_csv(out), file_name="lumora_order_lines.csv",
                        mime="text/csv", icon=":material/download:", use_container_width=True)
