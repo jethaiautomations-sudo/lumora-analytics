@@ -4,7 +4,9 @@ Definitions used everywhere:
 - Revenue       = net sales after discounts (sum of `revenue`)
 - Gross sales   = list price x quantity, before discounts
 - Gross profit  = revenue - COGS
-- Net profit    = gross profit - shipping/fulfilment cost (no overheads in the data)
+- Profit after shipping = gross profit - shipping/fulfilment cost (no overheads in the data;
+  stored in the `net_profit` column)
+- Margin after shipping = profit after shipping / revenue
 - Orders        = distinct order_id;  Units = sum of quantity
 - AOV           = revenue / orders
 - New customer  = first order ever falls inside the selected period

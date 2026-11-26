@@ -38,7 +38,7 @@ Three parts work together:
 - **Sales team:** leaderboard, revenue/orders/AOV per salesperson, target vs actual, growth, top 5 and bottom 5
 - **Products:** top/bottom 10 by units, revenue or profit; highest revenue and profit; units per product; category performance; revenue vs margin; products declining year on year
 - **Customers:** unique, new vs returning, top 10 customers, average spend, repeat purchase rate, purchase frequency, revenue by segment
-- **Profitability:** gross and net profit and margins, gross-sales-to-net-profit waterfall, margin trend, profit by category and region, most and least profitable products, discount impact by segment
+- **Profitability:** gross profit, profit after shipping and their margins, a waterfall from gross sales to profit after shipping, margin trend, profit by category and region, most and least profitable products, discount impact by segment
 
 **Marketing & AI** (daily channel data, `data/lumora_daily_sales_2026.csv`)
 - **Marketing channels:** sessions, conversion, ROAS and returns by channel, with alerts
@@ -56,7 +56,8 @@ Three parts work together:
 | Revenue growth | Revenue vs the previous period of the same length |
 | Target achievement | Revenue ÷ monthly targets pro-rated to the days selected |
 | Gross profit | Revenue − cost of goods sold |
-| Net profit | Gross profit − shipping cost (no overheads in the data) |
+| Profit after shipping | Gross profit − shipping costs. Overheads (salaries, rent, software) aren't in the sample data, so they're not deducted |
+| Margin after shipping | Profit after shipping ÷ revenue |
 | New customer | First order ever falls inside the selected period |
 | Repeat purchase rate | Share of the period's customers with 2+ orders ever |
 | Declining product | Last 3 months' revenue down 10%+ vs the same months a year earlier |

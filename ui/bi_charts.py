@@ -238,14 +238,15 @@ def profit_waterfall(t: dict, height: int = 360) -> go.Figure:
     steps = [("Gross sales", t["gross_sales"], "absolute"), ("Discounts", -t["discounts"], "relative"),
              ("Net revenue", t["revenue"], "total"), ("COGS", -t["cogs"], "relative"),
              ("Gross profit", t["gross_profit"], "total"), ("Shipping", -t["shipping"], "relative"),
-             ("Net profit", t["net_profit"], "total")]
+             ("Profit after<br>shipping", t["net_profit"], "total")]
     fig = go.Figure(go.Waterfall(
         x=[s[0] for s in steps], y=[s[1] for s in steps], measure=[s[2] for s in steps],
         text=[_label(abs(s[1]), "usd") for s in steps], textposition="outside", cliponaxis=False,
         textfont=dict(color=C["text"], size=11),
         increasing=dict(marker=dict(color=C["teal"])), decreasing=dict(marker=dict(color=_hex_to_rgba(C["bad"], 0.8))),
         totals=dict(marker=dict(color=C["blue"])), connector=dict(line=dict(color=C["border"], width=1)),
-        hovertemplate="%{x}: $%{y:,.0f}<extra></extra>"))
+        customdata=[s[0].replace("<br>", " ") for s in steps],
+        hovertemplate="%{customdata}: $%{y:,.0f}<extra></extra>"))
     fig.update_layout(height=height, hovermode="closest", yaxis=TICK["usd"], showlegend=False, margin=dict(l=8, r=8, t=24, b=8))
     return fig
 
@@ -256,10 +257,10 @@ def margin_bars(df: pd.DataFrame, height: int | None = None) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Bar(y=d["name"], x=d["gross_profit"], orientation="h", name="Gross profit",
                          marker=dict(color=_hex_to_rgba(C["teal"], 0.8)), customdata=d["gross_margin_pct"],
-                         hovertemplate="%{y}<br>Gross profit: $%{x:,.0f}<br>Margin: %{customdata:.1f}%<extra></extra>"))
-    fig.add_trace(go.Bar(y=d["name"], x=d["net_profit"], orientation="h", name="Net profit",
+                         hovertemplate="%{y}<br>Gross profit: $%{x:,.0f}<br>Gross margin: %{customdata:.1f}%<extra></extra>"))
+    fig.add_trace(go.Bar(y=d["name"], x=d["net_profit"], orientation="h", name="Profit after shipping",
                          marker=dict(color=_hex_to_rgba(C["blue"], 0.8)), customdata=d["net_margin_pct"],
-                         hovertemplate="%{y}<br>Net profit: $%{x:,.0f}<br>Margin: %{customdata:.1f}%<extra></extra>"))
+                         hovertemplate="%{y}<br>Profit after shipping: $%{x:,.0f}<br>Margin after shipping: %{customdata:.1f}%<extra></extra>"))
     fig.update_layout(height=height, barmode="group", bargap=0.28, hovermode="closest",
                       xaxis=dict(tickprefix="$", tickformat="~s", showgrid=True, gridcolor=C["grid"]), yaxis=dict(showgrid=False))
     return fig
