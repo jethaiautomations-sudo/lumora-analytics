@@ -278,6 +278,7 @@ label, [data-testid="stWidgetLabel"] p { color: var(--muted) !important; font-si
 .lm-ai-head { display: flex; align-items: center; gap: var(--space-sm); flex-wrap: wrap; }
 .lm-sample { cursor: help; }
 .lm-ai-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--teal); border: 1px solid rgba(45,212,191,.3); background: rgba(45,212,191,.07); border-radius: 999px; padding: 3px 10px; }
+.stApp .lm-ai-note { font-size: 12px; color: var(--muted); margin: .45rem 0 0; }
 .stApp .lm-ai-summary { font-size: 15px; line-height: 1.65; color: var(--text); margin: .9rem 0 0; max-width: 85ch; }
 .lm-ai-list h4 { font-size: 13px; color: var(--muted); font-weight: 500 !important; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 .6rem; padding: 0; }
 .stApp .lm-ai-list ul { margin: 0; padding-left: 1rem; display: grid; gap: .5rem; }

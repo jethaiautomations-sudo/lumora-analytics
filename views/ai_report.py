@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import streamlit as st
 
 from core import metrics as m
@@ -22,16 +24,29 @@ def _as_markdown(r: dict) -> str:
             f"## Recommended actions\n{bullets(r['actions'])}\n")
 
 
+def _week_label(start: str, end: str) -> str:
+    """'2026-11-16', '2026-11-22' -> '16–22 Nov 2026' (falls back to the raw text if unparseable)."""
+    try:
+        a, b = date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError:
+        return f"{start} to {end}"
+    if (a.year, a.month) == (b.year, b.month):
+        return f"{a.day}–{b.day} {b:%b %Y}"
+    if a.year == b.year:
+        return f"{a.day} {a:%b} – {b.day} {b:%b %Y}"
+    return f"{a.day} {a:%b %Y} – {b.day} {b:%b %Y}"
+
+
 def render(ctx) -> None:
     report = ctx.ai_report
     with st.container(key="sec_ai_report"):
         if report is None:
             ui.empty_state("No AI report yet", "Run the n8n workflow below, or generate one with your API key.")
         else:
+            note = ""
             if (report["week_start"], report["week_end"]) != (str(ctx.start), str(ctx.end)):
-                st.info(f"This report covers {report['week_start']} to {report['week_end']}. "
-                        "Your filters show a different period.", icon=":material/info:")
-            ui.ai_report_card(report)
+                note = f"Report for {_week_label(report['week_start'], report['week_end'])} (latest weekly run)"
+            ui.ai_report_card(report, note=note)
             st.download_button("Download as Markdown", _as_markdown(report).encode(),
                                file_name=f"ai_report_{report['week_end']}.md", mime="text/markdown",
                                icon=":material/description:")
@@ -45,7 +60,8 @@ def render(ctx) -> None:
                              "Same as the Monday run: builds the report, emails it, posts to Slack and saves it to the sheet.")
             url = settings.n8n_webhook_url()
             if not url:
-                st.caption("Add N8N_WEBHOOK_URL to .streamlit/secrets.toml to enable this.")
+                st.caption("Disabled in the public demo. In production this triggers the n8n workflow, "
+                           "which emails the report, posts it to Slack and saves it here.")
             if st.button("Run workflow", type="primary", icon=":material/play_arrow:", disabled=not url, key="run_n8n"):
                 try:
                     with st.spinner("Starting the n8n workflow…"):
@@ -64,7 +80,8 @@ def render(ctx) -> None:
                              f"{ctx.period_label}. Calls the AI directly and saves the result here.")
             ai = settings.ai_provider()
             if not ai:
-                st.caption("Add OPENAI_API_KEY (or ANTHROPIC_API_KEY) to .streamlit/secrets.toml to enable this.")
+                st.caption("Disabled in the public demo to protect the API key. "
+                           "The report above was written by OpenAI from the weekly KPIs.")
             else:
                 st.caption(f"Using {PROVIDER_LABELS[ai[0]]}" + (f" · {ai[2]}" if ai[2] else ""))
             if st.button("Generate with AI", icon=":material/auto_awesome:", disabled=not ai, key="gen_ai"):

@@ -171,7 +171,8 @@ def alert_list(items: list[dict]) -> None:
 
 # ---------- AI report ----------
 
-def ai_report_card(report: dict, compact: bool = False) -> None:
+def ai_report_card(report: dict, compact: bool = False, note: str = "") -> None:
+    """`note` is an optional muted line shown under the badge."""
     def ul(items):
         return "<ul>" + "".join(f"<li>{escape(t)}</li>" for t in items) + "</ul>"
     cols = "" if compact else (
@@ -186,7 +187,8 @@ def ai_report_card(report: dict, compact: bool = False) -> None:
         '<div class="lm-card"><div class="lm-ai-head">'
         '<span class="lm-ai-badge">✦ AI analyst · '
         f'{escape(report["week_start"])} to {escape(report["week_end"])}</span>{sample}</div>'
-        f'<p class="lm-ai-summary">{escape(report["summary"])}</p>{cols}</div>'
+        + (f'<p class="lm-ai-note">{escape(note)}</p>' if note else "")
+        + f'<p class="lm-ai-summary">{escape(report["summary"])}</p>{cols}</div>'
     )
 
 
