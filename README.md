@@ -20,6 +20,24 @@ A dark, SaaS-style analytics dashboard for Lumora Home, a fictional online home-
 ![AI weekly report](docs/screenshots/ai-report.png)
 *AI report: the LLM-written weekly summary, with buttons to run the n8n workflow or generate a quick report.*
 
+## Automation in action
+
+![n8n workflow](docs/screenshots/n8n-workflow.png)
+*n8n workflow: runs every Monday 7 AM or on demand*
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/email-report.png" alt="Weekly report email" width="100%">
+      <br><em>Weekly report email (Gmail)</em>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/screenshots/slack-report.png" alt="Weekly report in Slack" width="100%">
+      <br><em>Same report posted to #weekly-reports (Slack)</em>
+    </td>
+  </tr>
+</table>
+
 ## How it works
 
 Three parts work together:
